@@ -1,0 +1,44 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - NEXT_PUBLIC_API_URL=/brandtracker
+        - NEXT_PUBLIC_SUPABASE_URL=https://wrcrzbwhwcdraifmxkyb.supabase.co
+        - NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_8dA8iPkTvXB-Gj_JfPzEsg_g5cUC9fK
+    container_name: brandtracker-frontend
+    restart: unless-stopped
+    ports:
+      - "3011:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SUPABASE_URL=https://wrcrzbwhwcdraifmxkyb.supabase.co
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_8dA8iPkTvXB-Gj_JfPzEsg_g5cUC9fK
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/brandtracker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  backend:
+    build: ./backend
+    container_name: brandtracker-backend
+    restart: unless-stopped
+    ports:
+      - "8011:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - backend-data:/app/data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  backend-data:

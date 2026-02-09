@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { generateQuestions, updateQuestion, createQuestion, deleteQuestion, setSessionQuestions, getSession } from '@/lib/api';
+import type { GenerationProgress } from '@/lib/api';
 import type { ResearchSession, Persona, Question } from '@/types';
 import { MessageSquare, Sparkles, ArrowRight, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 
@@ -18,6 +19,9 @@ export default function QuestionsStep({ session, onUpdate, onNext }: QuestionsSt
   const [editText, setEditText] = useState('');
   const [addingForPersona, setAddingForPersona] = useState<string | null>(null);
   const [newQuestionText, setNewQuestionText] = useState('');
+  const [progressCurrent, setProgressCurrent] = useState(0);
+  const [progressTotal, setProgressTotal] = useState(0);
+  const [progressMessage, setProgressMessage] = useState('');
 
   // Auto-generate questions if none exist
   useEffect(() => {
@@ -29,14 +33,21 @@ export default function QuestionsStep({ session, onUpdate, onNext }: QuestionsSt
   const handleGenerate = async () => {
     setLoading(true);
     setError('');
+    setProgressCurrent(0);
+    setProgressTotal(session.personas.length);
+    setProgressMessage('Starting question generation...');
     try {
-      await generateQuestions(session.id);
-      const updated = await getSession(session.id);
+      const updated = await generateQuestions(session.id, (progress: GenerationProgress) => {
+        setProgressCurrent(progress.current);
+        setProgressTotal(progress.total);
+        setProgressMessage(progress.message);
+      });
       onUpdate(updated);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to generate questions.');
+      setError(err?.response?.data?.detail || err?.message || 'Failed to generate questions.');
     } finally {
       setLoading(false);
+      setProgressMessage('');
     }
   };
 
@@ -102,7 +113,18 @@ export default function QuestionsStep({ session, onUpdate, onNext }: QuestionsSt
           {loading ? (
             <div className="text-center py-12">
               <Sparkles className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-4" />
-              <p className="text-slate-600">Generating questions for each persona...</p>
+              <div className="max-w-md mx-auto mb-4">
+                <div className="w-full bg-slate-200 rounded-full h-2 mb-2">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${progressTotal > 0 ? (progressCurrent / progressTotal) * 100 : 0}%` }}
+                  />
+                </div>
+                <p className="text-sm text-slate-600">
+                  {progressMessage || 'Generating questions for each persona...'}
+                  {progressTotal > 0 && ` (${progressCurrent}/${progressTotal})`}
+                </p>
+              </div>
             </div>
           ) : session.questions.length === 0 ? (
             <div className="text-center py-12">

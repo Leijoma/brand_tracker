@@ -57,6 +57,7 @@ class QuestionDB(Base):
     context = Column(Text, nullable=True)
     origin = Column(String, nullable=False, default="ai_generated")
     category = Column(String, nullable=True)
+    research_area = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -68,10 +69,14 @@ class SessionDB(Base):
     __tablename__ = "sessions"
 
     id = Column(String, primary_key=True, default=gen_uuid)
+    user_id = Column(String, nullable=True)  # Supabase auth user ID
     category = Column(String, nullable=False)
     brands = Column(Text, nullable=False)  # JSON array as text
     market_context = Column(Text, nullable=False)
     questions_per_persona = Column(Integer, nullable=False, default=5)
+    research_areas = Column(Text, nullable=True)  # JSON array
+    primary_brand = Column(String, nullable=True)
+    language = Column(String, nullable=True, default="English")
     status = Column(String, nullable=False, default="setup")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -123,5 +128,6 @@ class AnalysisResultDB(Base):
     avg_sentiment_score = Column(Float, nullable=False)
     share_of_voice = Column(Float, nullable=False)
     persona_affinity = Column(Text, nullable=False)  # JSON object as text
+    topic_scores = Column(Text, nullable=True)  # JSON: {"area": {"score": 0.8, "mentions": 5}}
 
     run = relationship("ResearchRunDB", back_populates="analysis_results")

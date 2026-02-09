@@ -3,6 +3,9 @@ export interface ResearchSetup {
   brands: string[];
   market_context: string;
   questions_per_persona: number;
+  research_areas: string[];
+  primary_brand?: string;
+  language?: string;
 }
 
 export interface Persona {
@@ -40,6 +43,7 @@ export interface Question {
   context?: string;
   origin: 'ai_generated' | 'custom';
   category?: string;
+  research_area?: string;
 }
 
 export interface QueryResponse {
@@ -60,6 +64,7 @@ export interface AnalysisResult {
   share_of_voice: number;
   persona_affinity: { [key: string]: number };
   model_name: string;
+  topic_scores?: { [area: string]: { score: number; mentions: number } };
 }
 
 export interface ResearchRun {

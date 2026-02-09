@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { generatePersonas, updatePersona, createPersona, deletePersona, setSessionPersonas, getSession } from '@/lib/api';
+import type { GenerationProgress } from '@/lib/api';
 import type { ResearchSession, Persona, PersonaCreate } from '@/types';
 import { Users, Sparkles, ArrowRight, TrendingUp, DollarSign, Heart, Pencil, Trash2, Plus, Check, X } from 'lucide-react';
 
@@ -16,18 +17,22 @@ export default function PersonasStep({ session, onUpdate, onNext }: PersonasStep
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [progressMessage, setProgressMessage] = useState('');
 
   const handleGeneratePersonas = async () => {
     setLoading(true);
     setError('');
+    setProgressMessage('Starting persona generation...');
     try {
-      await generatePersonas(session.id);
-      const updated = await getSession(session.id);
+      const updated = await generatePersonas(session.id, (progress: GenerationProgress) => {
+        setProgressMessage(progress.message);
+      });
       onUpdate(updated);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to generate personas.');
+      setError(err?.response?.data?.detail || err?.message || 'Failed to generate personas.');
     } finally {
       setLoading(false);
+      setProgressMessage('');
     }
   };
 
@@ -94,6 +99,14 @@ export default function PersonasStep({ session, onUpdate, onNext }: PersonasStep
               <p className="text-slate-600 mb-6 max-w-md mx-auto">
                 We'll create 5 diverse personas. You can edit them or add your own afterward.
               </p>
+              {loading && (
+                <div className="mb-6 max-w-md mx-auto">
+                  <div className="w-full bg-slate-200 rounded-full h-2 mb-2">
+                    <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full animate-pulse" style={{ width: '60%' }} />
+                  </div>
+                  <p className="text-sm text-slate-600">{progressMessage}</p>
+                </div>
+              )}
               <button onClick={handleGeneratePersonas} disabled={loading}
                 className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 inline-flex items-center gap-2">
                 {loading ? <><Sparkles className="w-5 h-5 animate-spin" /> Generating...</> : <><Sparkles className="w-5 h-5" /> Generate Personas</>}

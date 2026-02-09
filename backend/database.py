@@ -1,22 +1,15 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
 import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./brandtracker.db")
+load_dotenv()
 
-engine = create_async_engine(DATABASE_URL, echo=False)
-async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
+# Create Supabase client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-class Base(DeclarativeBase):
-    pass
-
-
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
-async def get_db():
-    async with async_session_factory() as session:
-        yield session
+def get_supabase() -> Client:
+    """Get Supabase client instance"""
+    return supabase

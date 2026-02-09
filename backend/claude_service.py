@@ -1,3 +1,4 @@
+import asyncio
 import anthropic
 import os
 from typing import List, Dict
@@ -20,12 +21,14 @@ class ClaudeService:
             response_text = response_text.replace('```json', '').replace('```', '').strip()
         return response_text
 
-    async def generate_personas(self, category: str, market_context: str, count: int = 5) -> List[Persona]:
+    async def generate_personas(self, category: str, market_context: str, count: int = 5, language: str = "English") -> List[Persona]:
         """Generate diverse personas for the given category"""
+
+        lang_instruction = f"\n\nIMPORTANT: Write ALL persona descriptions, names, occupations, and key_priorities in {language}." if language != "English" else ""
 
         prompt = f"""Generate {count} diverse consumer personas for the "{category}" category.
 
-Market Context: {market_context}
+Market Context: {market_context}{lang_instruction}
 
 For each persona, provide:
 1. A realistic name
@@ -57,10 +60,11 @@ Return ONLY valid JSON in this exact format:
   ]
 }}"""
 
-        message = self.client.messages.create(
+        message = await asyncio.to_thread(
+            self.client.messages.create,
             model=self.model,
             max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
         )
 
         response_text = message.content[0].text
@@ -89,13 +93,30 @@ Return ONLY valid JSON in this exact format:
         persona: Persona,
         category: str,
         market_context: str,
-        count: int = 5
+        count: int = 5,
+        research_areas: List[str] = None,
+        language: str = "English",
     ) -> List[Question]:
         """Generate natural questions this persona would ask about the category.
 
         IMPORTANT: Questions should NOT mention specific brands - we want to see
         what the AI brings up organically.
         """
+        # Auto-increase count to cover all research areas
+        effective_count = count
+        if research_areas:
+            effective_count = max(count, len(research_areas) * 2)
+
+        areas_section = ""
+        areas_json_field = ""
+        if research_areas:
+            areas_section = f"""
+Research areas to cover: {', '.join(research_areas)}
+- You MUST generate questions that cover ALL of these research areas
+- Distribute questions so each area is addressed by at least 1-2 questions
+- Each question should be tagged with which research area it targets
+"""
+            areas_json_field = ',\n      "research_area": "which research area this question targets (must be one of: {", ".join(research_areas)})"'
 
         prompt = f"""You are {persona.name}, a {persona.age_range} {persona.occupation}.
 
@@ -108,34 +129,40 @@ Your profile:
 - Key priorities: {', '.join(persona.key_priorities)}
 
 You're researching the "{category}" category. Context: {market_context}
-
-Generate {count} natural questions you would ask when researching this category.
+{areas_section}
+Generate {effective_count} natural questions you would ask when researching this category.
+{"Write ALL questions and context in " + language + "." if language != "English" else ""}
 
 CRITICAL RULES:
 - DO NOT mention specific brand names in questions
-- Ask open-ended questions that would naturally elicit brand recommendations
+- The majority of questions (at least 60-70%) should directly ask for brand/model suggestions and recommendations
+- Questions should be phrased to elicit concrete brand names and specific model/product recommendations
+- The remaining questions can cover features, comparisons, or experiences but should still invite mentioning brands
 - Questions should reflect your priorities, concerns, and decision-making style
-- Vary the question types (comparison, recommendation, feature-based, experience-based)
 
-Examples of GOOD questions:
-- "What are the most reliable options for [category]?"
-- "I need something that's [priority], what should I look for?"
-- "What do professionals in [field] typically use?"
+Examples of GOOD questions (note how they ask for specific suggestions):
+- "Which brands and models would you recommend for a family that prioritizes safety?"
+- "Can you suggest some good options in [category] that have the best value for money?"
+- "What specific models should I look at if I want [priority]?"
+- "Which brands are considered the most reliable in [category] right now?"
+- "What would you recommend if I'm looking for [specific need]?"
+- "What are the top 3 options you'd suggest for someone who values [priority]?"
 
 Return ONLY valid JSON:
 {{
   "questions": [
     {{
       "question_text": "string",
-      "context": "brief explanation of why this persona asks this"
+      "context": "brief explanation of why this persona asks this"{areas_json_field}
     }}
   ]
 }}"""
 
-        message = self.client.messages.create(
+        message = await asyncio.to_thread(
+            self.client.messages.create,
             model=self.model,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
+            max_tokens=3000,
+            messages=[{"role": "user", "content": prompt}],
         )
 
         response_text = message.content[0].text
@@ -148,7 +175,8 @@ Return ONLY valid JSON:
                 id=f"{persona.id}_q_{i}",
                 persona_id=persona.id,
                 question_text=q["question_text"],
-                context=q.get("context")
+                context=q.get("context"),
+                research_area=q.get("research_area"),
             ))
 
         return questions
@@ -174,7 +202,10 @@ Provide a helpful, natural response as if you're having a conversation. If relev
         self,
         responses: List[Dict],  # {question, response, persona}
         brands: List[str],
-        category: str
+        category: str,
+        primary_brand: str = None,
+        research_areas: List[str] = None,
+        language: str = "English",
     ) -> List[AnalysisResult]:
         """Analyze all responses to extract brand mentions, sentiment, and rankings"""
 
@@ -186,10 +217,31 @@ Provide a helpful, natural response as if you're having a conversation. If relev
             responses_text += f"Question: {r['question']}\n"
             responses_text += f"Response: {r['response']}\n"
 
+        topic_section = ""
+        topic_json = ""
+        if research_areas:
+            topic_section = f"""
+Research areas to analyze: {', '.join(research_areas)}
+For each brand, you MUST evaluate how it performs in EACH of these research areas based on what was said in the responses.
+CRITICAL: The "topic_scores" field is REQUIRED for EVERY brand. You MUST include a score for EVERY research area listed above, even if the brand was barely mentioned — use score 0.0 and mentions 0 in that case.
+"""
+            areas_example = ", ".join(f'"{a}": {{"score": 0.0, "mentions": 0}}' for a in research_areas)
+            topic_json = f""",
+      "topic_scores": {{
+        {areas_example}
+      }}"""
+
+        primary_section = ""
+        if primary_brand:
+            primary_section = f"""
+Primary brand for comparison: {primary_brand}
+When analyzing, pay special attention to how {primary_brand} compares to competitors.
+"""
+
         prompt = f"""Analyze these AI responses about "{category}" for brand perception research.
 
 Tracked brands: {', '.join(brands)}
-
+{primary_section}{topic_section}
 Responses to analyze:
 {responses_text}
 
@@ -215,17 +267,18 @@ Return ONLY valid JSON:
         "persona_0": 0.0-1.0,
         "persona_1": 0.0-1.0,
         ...
-      }}
+      }}{topic_json}
     }}
   ],
   "category_insights": "2-3 sentences about emergent patterns",
   "methodology_notes": "any important caveats or observations"
 }}"""
 
-        message = self.client.messages.create(
+        message = await asyncio.to_thread(
+            self.client.messages.create,
             model=self.model,
-            max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}]
+            max_tokens=6000,
+            messages=[{"role": "user", "content": prompt}],
         )
 
         response_text = message.content[0].text
@@ -239,6 +292,15 @@ Return ONLY valid JSON:
         for r in data["results"]:
             share_of_voice = r["total_mentions"] / total_mentions if total_mentions > 0 else 0.0
 
+            # Ensure topic_scores has all research areas
+            ts = r.get("topic_scores")
+            if research_areas:
+                if not ts:
+                    ts = {}
+                for area in research_areas:
+                    if area not in ts:
+                        ts[area] = {"score": 0.0, "mentions": 0}
+
             results.append(AnalysisResult(
                 brand=r["brand"],
                 total_mentions=r["total_mentions"],
@@ -246,7 +308,8 @@ Return ONLY valid JSON:
                 first_mention_count=r["first_mention_count"],
                 avg_sentiment_score=r["avg_sentiment_score"],
                 share_of_voice=share_of_voice,
-                persona_affinity=r["persona_affinity"]
+                persona_affinity=r["persona_affinity"],
+                topic_scores=ts,
             ))
 
         # Sort by a composite score (mentions + recommendations + sentiment)

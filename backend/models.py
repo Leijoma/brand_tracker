@@ -63,6 +63,7 @@ class Question(BaseModel):
     context: Optional[str] = None
     origin: str = "ai_generated"
     category: Optional[str] = None
+    research_area: Optional[str] = None
 
 
 class QuestionCreate(BaseModel):
@@ -84,6 +85,9 @@ class ResearchSetup(BaseModel):
     brands: List[str]
     market_context: str
     questions_per_persona: int = Field(default=5, ge=1, le=10)
+    research_areas: List[str] = []
+    primary_brand: Optional[str] = None
+    language: str = "English"
 
 
 # ---- Response schemas ----
@@ -110,6 +114,7 @@ class AnalysisResult(BaseModel):
     share_of_voice: float
     persona_affinity: Dict[str, float]
     model_name: str = "claude"
+    topic_scores: Optional[Dict[str, Dict[str, float]]] = None
 
 
 # ---- Research Run schemas ----

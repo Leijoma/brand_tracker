@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { supabase } from './supabase';
 import type {
   ResearchSetup, ResearchSession, Persona, PersonaCreate,
   Question, AnalysisResult, SessionSummary, ResearchRun, AIModel,
@@ -9,6 +10,19 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+});
+
+// Attach Supabase JWT to all API requests
+api.interceptors.request.use(async (config) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+  } catch {
+    // No auth available — proceed without token
+  }
+  return config;
 });
 
 // ---- Persona CRUD ----
@@ -67,25 +81,79 @@ export const createSession = async (setup: ResearchSetup): Promise<ResearchSessi
   return response.data;
 };
 
+export const deleteSession = async (sessionId: string): Promise<void> => {
+  await api.delete(`/api/sessions/${sessionId}`);
+};
+
 export const getSession = async (sessionId: string): Promise<ResearchSession> => {
   const response = await api.get(`/api/sessions/${sessionId}`);
   return response.data;
 };
 
+export const updateSession = async (sessionId: string, setup: ResearchSetup): Promise<ResearchSession> => {
+  const response = await api.put(`/api/sessions/${sessionId}`, setup);
+  return response.data;
+};
+
 // ---- Session: Persona & Question Generation ----
 
-export const generatePersonas = async (sessionId: string): Promise<Persona[]> => {
-  const response = await api.post(`/api/sessions/${sessionId}/generate-personas`);
+export interface GenerationProgress {
+  current: number;
+  total: number;
+  status: 'running' | 'completed' | 'error';
+  message: string;
+  session?: ResearchSession;
+}
+
+export const getGenerationProgress = async (taskId: string): Promise<GenerationProgress> => {
+  const response = await api.get(`/api/generation/${taskId}/progress`);
   return response.data;
+};
+
+export const generatePersonas = async (
+  sessionId: string,
+  onProgress?: (progress: GenerationProgress) => void,
+): Promise<ResearchSession> => {
+  const response = await api.post(`/api/sessions/${sessionId}/generate-personas`);
+  const { task_id } = response.data;
+
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const progress = await getGenerationProgress(task_id);
+    onProgress?.(progress);
+
+    if (progress.status === 'completed' && progress.session) {
+      return progress.session;
+    }
+    if (progress.status === 'error') {
+      throw new Error(progress.message || 'Persona generation failed');
+    }
+  }
+};
+
+export const generateQuestions = async (
+  sessionId: string,
+  onProgress?: (progress: GenerationProgress) => void,
+): Promise<ResearchSession> => {
+  const response = await api.post(`/api/sessions/${sessionId}/generate-questions`);
+  const { task_id } = response.data;
+
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const progress = await getGenerationProgress(task_id);
+    onProgress?.(progress);
+
+    if (progress.status === 'completed' && progress.session) {
+      return progress.session;
+    }
+    if (progress.status === 'error') {
+      throw new Error(progress.message || 'Question generation failed');
+    }
+  }
 };
 
 export const setSessionPersonas = async (sessionId: string, personaIds: string[]): Promise<Persona[]> => {
   const response = await api.put(`/api/sessions/${sessionId}/personas`, { persona_ids: personaIds });
-  return response.data;
-};
-
-export const generateQuestions = async (sessionId: string): Promise<Question[]> => {
-  const response = await api.post(`/api/sessions/${sessionId}/generate-questions`);
   return response.data;
 };
 

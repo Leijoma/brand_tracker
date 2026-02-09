@@ -6,20 +6,37 @@ import PersonasStep from '@/components/PersonasStep';
 import QuestionsStep from '@/components/QuestionsStep';
 import ResearchStep from '@/components/ResearchStep';
 import DashboardStep from '@/components/DashboardStep';
+import MethodologyStep from '@/components/MethodologyStep';
+import AuthPage from '@/components/AuthPage';
+import { useAuth } from '@/lib/auth-context';
 import type { ResearchSession } from '@/types';
-import { Beaker } from 'lucide-react';
+import { Beaker, LogOut, Loader2 } from 'lucide-react';
 
-type Step = 'setup' | 'personas' | 'questions' | 'research' | 'dashboard';
+type Step = 'setup' | 'personas' | 'questions' | 'research' | 'methodology' | 'dashboard';
 
 export default function Home() {
+  const { user, loading: authLoading, signOut } = useAuth();
   const [currentStep, setCurrentStep] = useState<Step>('setup');
   const [session, setSession] = useState<ResearchSession | null>(null);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
 
   const steps: { id: Step; label: string }[] = [
     { id: 'setup', label: 'Setup' },
     { id: 'personas', label: 'Personas' },
     { id: 'questions', label: 'Questions' },
     { id: 'research', label: 'Research' },
+    { id: 'methodology', label: 'Methodology' },
     { id: 'dashboard', label: 'Dashboard' },
   ];
 
@@ -30,13 +47,25 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-              <Beaker className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
+                <Beaker className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">BrandTracker</h1>
+                <p className="text-sm text-slate-600">AI Brand Perception Research</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">BrandTracker</h1>
-              <p className="text-sm text-slate-600">AI Brand Perception Research</p>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-500">{user.email}</span>
+              <button
+                onClick={signOut}
+                className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg hover:bg-slate-50 flex items-center gap-1.5"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
             </div>
           </div>
         </div>
@@ -130,11 +159,16 @@ export default function Home() {
           <ResearchStep
             session={session}
             onUpdate={setSession}
+            onNext={() => setCurrentStep('methodology')}
+          />
+        )}
+        {currentStep === 'methodology' && session && (
+          <MethodologyStep
             onNext={() => setCurrentStep('dashboard')}
           />
         )}
         {currentStep === 'dashboard' && session && (
-          <DashboardStep session={session} />
+          <DashboardStep session={session} onRerun={() => setCurrentStep('research')} />
         )}
       </main>
     </div>

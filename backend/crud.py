@@ -1,285 +1,361 @@
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import uuid4
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
-from db_models import (
-    PersonaDB, QuestionDB, SessionDB, ResearchRunDB,
-    ResponseDB, AnalysisResultDB, session_personas, session_questions
-)
+from supabase import Client
 
 
 # ---- Personas ----
 
-async def create_persona(db: AsyncSession, **kwargs) -> PersonaDB:
-    if "key_priorities" in kwargs and isinstance(kwargs["key_priorities"], list):
-        kwargs["key_priorities"] = json.dumps(kwargs["key_priorities"])
+def create_persona(supabase: Client, **kwargs) -> Dict[str, Any]:
+    """Create a new persona"""
     if "id" not in kwargs:
         kwargs["id"] = str(uuid4())
-    persona = PersonaDB(**kwargs)
-    db.add(persona)
-    await db.commit()
-    await db.refresh(persona)
-    return persona
+    if "created_at" not in kwargs:
+        kwargs["created_at"] = datetime.utcnow().isoformat()
+    if "updated_at" not in kwargs:
+        kwargs["updated_at"] = datetime.utcnow().isoformat()
+    # key_priorities is stored as TEXT (JSON string) in DB
+    if "key_priorities" in kwargs and isinstance(kwargs["key_priorities"], list):
+        kwargs["key_priorities"] = json.dumps(kwargs["key_priorities"])
+
+    result = supabase.table("personas").insert(kwargs).execute()
+    return result.data[0] if result.data else None
 
 
-async def get_persona(db: AsyncSession, persona_id: str) -> Optional[PersonaDB]:
-    return await db.get(PersonaDB, persona_id)
+def get_persona(supabase: Client, persona_id: str) -> Optional[Dict[str, Any]]:
+    """Get persona by ID"""
+    result = supabase.table("personas").select("*").eq("id", persona_id).execute()
+    return result.data[0] if result.data else None
 
 
-async def list_personas(db: AsyncSession, category: Optional[str] = None) -> List[PersonaDB]:
-    stmt = select(PersonaDB).order_by(PersonaDB.created_at.desc())
+def list_personas(supabase: Client, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List all personas, optionally filtered by category"""
+    query = supabase.table("personas").select("*").order("created_at", desc=True)
     if category:
-        stmt = stmt.where(PersonaDB.category == category)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+        query = query.eq("category", category)
+    result = query.execute()
+    return result.data
 
 
-async def update_persona(db: AsyncSession, persona_id: str, updates: dict) -> Optional[PersonaDB]:
-    persona = await db.get(PersonaDB, persona_id)
-    if not persona:
-        return None
+def update_persona(supabase: Client, persona_id: str, updates: dict) -> Optional[Dict[str, Any]]:
+    """Update persona"""
     if "key_priorities" in updates and isinstance(updates["key_priorities"], list):
         updates["key_priorities"] = json.dumps(updates["key_priorities"])
-    updates["updated_at"] = datetime.utcnow()
-    for key, value in updates.items():
-        setattr(persona, key, value)
-    await db.commit()
-    await db.refresh(persona)
-    return persona
+    updates["updated_at"] = datetime.utcnow().isoformat()
+
+    result = supabase.table("personas").update(updates).eq("id", persona_id).execute()
+    return result.data[0] if result.data else None
 
 
-async def delete_persona(db: AsyncSession, persona_id: str) -> bool:
-    persona = await db.get(PersonaDB, persona_id)
-    if not persona:
-        return False
-    await db.delete(persona)
-    await db.commit()
-    return True
+def delete_persona(supabase: Client, persona_id: str) -> bool:
+    """Delete persona"""
+    result = supabase.table("personas").delete().eq("id", persona_id).execute()
+    return len(result.data) > 0
 
 
 # ---- Questions ----
 
-async def create_question(db: AsyncSession, **kwargs) -> QuestionDB:
+def create_question(supabase: Client, **kwargs) -> Dict[str, Any]:
+    """Create a new question"""
     if "id" not in kwargs:
         kwargs["id"] = str(uuid4())
-    question = QuestionDB(**kwargs)
-    db.add(question)
-    await db.commit()
-    await db.refresh(question)
-    return question
+    if "created_at" not in kwargs:
+        kwargs["created_at"] = datetime.utcnow().isoformat()
+    if "updated_at" not in kwargs:
+        kwargs["updated_at"] = datetime.utcnow().isoformat()
+
+    result = supabase.table("questions").insert(kwargs).execute()
+    return result.data[0] if result.data else None
 
 
-async def get_question(db: AsyncSession, question_id: str) -> Optional[QuestionDB]:
-    return await db.get(QuestionDB, question_id)
+def get_question(supabase: Client, question_id: str) -> Optional[Dict[str, Any]]:
+    """Get question by ID"""
+    result = supabase.table("questions").select("*").eq("id", question_id).execute()
+    return result.data[0] if result.data else None
 
 
-async def list_questions(db: AsyncSession, persona_id: Optional[str] = None, category: Optional[str] = None) -> List[QuestionDB]:
-    stmt = select(QuestionDB).order_by(QuestionDB.created_at.desc())
+def list_questions(supabase: Client, persona_id: Optional[str] = None, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List questions, optionally filtered by persona or category"""
+    query = supabase.table("questions").select("*").order("created_at", desc=True)
     if persona_id:
-        stmt = stmt.where(QuestionDB.persona_id == persona_id)
+        query = query.eq("persona_id", persona_id)
     if category:
-        stmt = stmt.where(QuestionDB.category == category)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+        query = query.eq("category", category)
+    result = query.execute()
+    return result.data
 
 
-async def update_question(db: AsyncSession, question_id: str, updates: dict) -> Optional[QuestionDB]:
-    question = await db.get(QuestionDB, question_id)
-    if not question:
-        return None
-    updates["updated_at"] = datetime.utcnow()
-    for key, value in updates.items():
-        setattr(question, key, value)
-    await db.commit()
-    await db.refresh(question)
-    return question
+def update_question(supabase: Client, question_id: str, updates: dict) -> Optional[Dict[str, Any]]:
+    """Update question"""
+    updates["updated_at"] = datetime.utcnow().isoformat()
+    result = supabase.table("questions").update(updates).eq("id", question_id).execute()
+    return result.data[0] if result.data else None
 
 
-async def delete_question(db: AsyncSession, question_id: str) -> bool:
-    question = await db.get(QuestionDB, question_id)
-    if not question:
-        return False
-    await db.delete(question)
-    await db.commit()
-    return True
+def delete_question(supabase: Client, question_id: str) -> bool:
+    """Delete question"""
+    result = supabase.table("questions").delete().eq("id", question_id).execute()
+    return len(result.data) > 0
 
 
 # ---- Sessions ----
 
-async def create_session(db: AsyncSession, category: str, brands: List[str], market_context: str, questions_per_persona: int = 5) -> SessionDB:
-    session = SessionDB(
-        id=str(uuid4()),
-        category=category,
-        brands=json.dumps(brands),
-        market_context=market_context,
-        questions_per_persona=questions_per_persona,
-    )
-    db.add(session)
-    await db.commit()
-    await db.refresh(session)
+def create_session(supabase: Client, category: str, brands: List[str], market_context: str,
+                  questions_per_persona: int = 5, research_areas: List[str] = None,
+                  primary_brand: str = None, language: str = "English",
+                  user_id: str = None) -> Dict[str, Any]:
+    """Create a new session"""
+    session_data = {
+        "id": str(uuid4()),
+        "user_id": user_id,
+        "category": category,
+        "brands": json.dumps(brands),
+        "market_context": market_context,
+        "questions_per_persona": questions_per_persona,
+        "research_areas": json.dumps(research_areas or []),
+        "primary_brand": primary_brand,
+        "language": language,
+        "status": "setup",
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    result = supabase.table("sessions").insert(session_data).execute()
+    return result.data[0] if result.data else None
+
+
+def get_session(supabase: Client, session_id: str, user_id: str = None) -> Optional[Dict[str, Any]]:
+    """Get session by ID with related data"""
+    query = supabase.table("sessions").select("*").eq("id", session_id)
+    if user_id is not None:
+        query = query.eq("user_id", user_id)
+    result = query.execute()
+
+    if not result.data:
+        return None
+
+    session = result.data[0]
+
+    # Fetch related personas
+    personas_result = supabase.table("session_personas").select("persona_id").eq("session_id", session_id).execute()
+    if personas_result.data:
+        persona_ids = [p["persona_id"] for p in personas_result.data]
+        personas = supabase.table("personas").select("*").in_("id", persona_ids).execute()
+        session["personas"] = personas.data
+    else:
+        session["personas"] = []
+
+    # Fetch related questions
+    questions_result = supabase.table("session_questions").select("question_id").eq("session_id", session_id).execute()
+    if questions_result.data:
+        question_ids = [q["question_id"] for q in questions_result.data]
+        questions = supabase.table("questions").select("*").in_("id", question_ids).execute()
+        session["questions"] = questions.data
+    else:
+        session["questions"] = []
+
+    # Fetch research runs
+    runs = list_runs(supabase, session_id)
+    session["runs"] = runs
+
     return session
 
 
-async def get_session(db: AsyncSession, session_id: str) -> Optional[SessionDB]:
-    stmt = (
-        select(SessionDB)
-        .options(
-            selectinload(SessionDB.personas),
-            selectinload(SessionDB.questions),
-            selectinload(SessionDB.runs).selectinload(ResearchRunDB.responses),
-            selectinload(SessionDB.runs).selectinload(ResearchRunDB.analysis_results),
-        )
-        .where(SessionDB.id == session_id)
-    )
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+def list_sessions(supabase: Client, user_id: str = None) -> List[Dict[str, Any]]:
+    """List all sessions"""
+    query = supabase.table("sessions").select("*").order("created_at", desc=True)
+    if user_id is not None:
+        query = query.eq("user_id", user_id)
+    result = query.execute()
+    return result.data
 
 
-async def list_sessions(db: AsyncSession) -> List[SessionDB]:
-    stmt = select(SessionDB).order_by(SessionDB.created_at.desc())
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
-
-
-async def update_session_status(db: AsyncSession, session_id: str, status: str) -> None:
-    session = await db.get(SessionDB, session_id)
-    if session:
-        session.status = status
-        session.updated_at = datetime.utcnow()
-        await db.commit()
-
-
-async def add_personas_to_session(db: AsyncSession, session_id: str, persona_ids: List[str]) -> None:
-    session = await get_session(db, session_id)
+def delete_session(supabase: Client, session_id: str, user_id: str = None) -> bool:
+    """Delete session and all related data"""
+    # Verify session exists and user has access
+    session = get_session(supabase, session_id, user_id=user_id)
     if not session:
-        return
-    # Clear existing and set new
-    session.personas.clear()
-    for pid in persona_ids:
-        persona = await db.get(PersonaDB, pid)
-        if persona:
-            session.personas.append(persona)
-    await db.commit()
+        return False
+
+    # Delete cascade is handled by database FK constraints
+    result = supabase.table("sessions").delete().eq("id", session_id).execute()
+    return len(result.data) > 0
 
 
-async def set_session_personas(db: AsyncSession, session_id: str, persona_ids: List[str]) -> None:
-    session = await get_session(db, session_id)
+def update_session_status(supabase: Client, session_id: str, status: str) -> None:
+    """Update session status"""
+    supabase.table("sessions").update({
+        "status": status,
+        "updated_at": datetime.utcnow().isoformat()
+    }).eq("id", session_id).execute()
+
+
+def update_session(supabase: Client, session_id: str, updates: dict, user_id: str = None) -> Optional[Dict[str, Any]]:
+    """Update session with provided fields"""
+    # Verify session exists and user has access
+    session = get_session(supabase, session_id, user_id=user_id)
     if not session:
-        return
-    session.personas.clear()
-    for pid in persona_ids:
-        persona = await db.get(PersonaDB, pid)
-        if persona:
-            session.personas.append(persona)
-    await db.commit()
+        return None
+
+    # Only allow updating specific fields
+    allowed_fields = ["category", "brands", "market_context", "questions_per_persona",
+                     "research_areas", "primary_brand", "language"]
+
+    update_data = {}
+    for field in allowed_fields:
+        if field in updates:
+            value = updates[field]
+            # Convert lists to JSON strings for storage
+            if field in ["brands", "research_areas"] and isinstance(value, list):
+                value = json.dumps(value)
+            update_data[field] = value
+
+    if not update_data:
+        return session  # No valid updates provided
+
+    update_data["updated_at"] = datetime.utcnow().isoformat()
+
+    result = supabase.table("sessions").update(update_data).eq("id", session_id).execute()
+    if not result.data:
+        return None
+
+    # Return updated session with all related data
+    return get_session(supabase, session_id, user_id=user_id)
 
 
-async def set_session_questions(db: AsyncSession, session_id: str, question_ids: List[str]) -> None:
-    session = await get_session(db, session_id)
-    if not session:
-        return
-    session.questions.clear()
-    for qid in question_ids:
-        question = await db.get(QuestionDB, qid)
-        if question:
-            session.questions.append(question)
-    await db.commit()
+def add_personas_to_session(supabase: Client, session_id: str, persona_ids: List[str]) -> None:
+    """Add personas to session (clears existing first)"""
+    # Remove existing persona associations
+    supabase.table("session_personas").delete().eq("session_id", session_id).execute()
+
+    # Add new associations
+    if persona_ids:
+        associations = [{"session_id": session_id, "persona_id": pid} for pid in persona_ids]
+        supabase.table("session_personas").insert(associations).execute()
+
+
+def set_session_personas(supabase: Client, session_id: str, persona_ids: List[str]) -> None:
+    """Set session personas (replaces all existing)"""
+    add_personas_to_session(supabase, session_id, persona_ids)
+
+
+def set_session_questions(supabase: Client, session_id: str, question_ids: List[str]) -> None:
+    """Set session questions (replaces all existing)"""
+    # Remove existing question associations
+    supabase.table("session_questions").delete().eq("session_id", session_id).execute()
+
+    # Add new associations
+    if question_ids:
+        associations = [{"session_id": session_id, "question_id": qid} for qid in question_ids]
+        supabase.table("session_questions").insert(associations).execute()
 
 
 # ---- Research Runs ----
 
-async def create_run(db: AsyncSession, session_id: str, models_used: List[str] = None) -> ResearchRunDB:
-    run = ResearchRunDB(
-        id=str(uuid4()),
-        session_id=session_id,
-        status="running",
-        models_used=json.dumps(models_used or ["claude"]),
-    )
-    db.add(run)
-    await db.commit()
-    await db.refresh(run)
+def create_run(supabase: Client, session_id: str, models_used: List[str] = None) -> Dict[str, Any]:
+    """Create a new research run"""
+    run_data = {
+        "id": str(uuid4()),
+        "session_id": session_id,
+        "status": "running",
+        "models_used": json.dumps(models_used or ["claude"]),
+        "started_at": datetime.utcnow().isoformat(),
+    }
+    result = supabase.table("research_runs").insert(run_data).execute()
+    return result.data[0] if result.data else None
+
+
+def complete_run(supabase: Client, run_id: str) -> None:
+    """Mark run as completed"""
+    supabase.table("research_runs").update({
+        "status": "completed",
+        "completed_at": datetime.utcnow().isoformat()
+    }).eq("id", run_id).execute()
+
+
+def fail_run(supabase: Client, run_id: str) -> None:
+    """Mark run as failed"""
+    supabase.table("research_runs").update({
+        "status": "error",
+        "completed_at": datetime.utcnow().isoformat()
+    }).eq("id", run_id).execute()
+
+
+def get_run(supabase: Client, run_id: str) -> Optional[Dict[str, Any]]:
+    """Get run by ID with related data"""
+    result = supabase.table("research_runs").select("*").eq("id", run_id).execute()
+
+    if not result.data:
+        return None
+
+    run = result.data[0]
+
+    # Fetch responses
+    responses = supabase.table("responses").select("*").eq("run_id", run_id).execute()
+    run["responses"] = responses.data
+
+    # Fetch analysis results
+    analysis = supabase.table("analysis_results").select("*").eq("run_id", run_id).execute()
+    run["analysis_results"] = analysis.data
+
     return run
 
 
-async def complete_run(db: AsyncSession, run_id: str) -> None:
-    run = await db.get(ResearchRunDB, run_id)
-    if run:
-        run.status = "completed"
-        run.completed_at = datetime.utcnow()
-        await db.commit()
+def list_runs(supabase: Client, session_id: str) -> List[Dict[str, Any]]:
+    """List all runs for a session"""
+    result = supabase.table("research_runs").select("*").eq("session_id", session_id).order("started_at", desc=True).execute()
 
+    # Fetch related data for each run
+    for run in result.data:
+        responses = supabase.table("responses").select("*").eq("run_id", run["id"]).execute()
+        run["responses"] = responses.data
 
-async def fail_run(db: AsyncSession, run_id: str) -> None:
-    run = await db.get(ResearchRunDB, run_id)
-    if run:
-        run.status = "error"
-        run.completed_at = datetime.utcnow()
-        await db.commit()
+        analysis = supabase.table("analysis_results").select("*").eq("run_id", run["id"]).execute()
+        run["analysis_results"] = analysis.data
 
-
-async def get_run(db: AsyncSession, run_id: str) -> Optional[ResearchRunDB]:
-    stmt = (
-        select(ResearchRunDB)
-        .options(
-            selectinload(ResearchRunDB.responses),
-            selectinload(ResearchRunDB.analysis_results),
-        )
-        .where(ResearchRunDB.id == run_id)
-    )
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none()
-
-
-async def list_runs(db: AsyncSession, session_id: str) -> List[ResearchRunDB]:
-    stmt = (
-        select(ResearchRunDB)
-        .where(ResearchRunDB.session_id == session_id)
-        .order_by(ResearchRunDB.started_at.desc())
-    )
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    return result.data
 
 
 # ---- Responses ----
 
-async def add_response(db: AsyncSession, run_id: str, question_id: str, persona_id: str, response_text: str, model_name: str = "claude") -> ResponseDB:
-    response = ResponseDB(
-        id=str(uuid4()),
-        run_id=run_id,
-        question_id=question_id,
-        persona_id=persona_id,
-        response_text=response_text,
-        model_name=model_name,
-    )
-    db.add(response)
-    await db.commit()
-    await db.refresh(response)
-    return response
+def add_response(supabase: Client, run_id: str, question_id: str, persona_id: str,
+                response_text: str, model_name: str = "claude") -> Dict[str, Any]:
+    """Add a response to a run"""
+    response_data = {
+        "id": str(uuid4()),
+        "run_id": run_id,
+        "question_id": question_id,
+        "persona_id": persona_id,
+        "response_text": response_text,
+        "model_name": model_name,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    result = supabase.table("responses").insert(response_data).execute()
+    return result.data[0] if result.data else None
 
 
 # ---- Analysis ----
 
-async def add_analysis_results(db: AsyncSession, run_id: str, results: list, model_name: str = "claude") -> List[AnalysisResultDB]:
+def add_analysis_results(supabase: Client, run_id: str, results: list, model_name: str = "claude") -> List[Dict[str, Any]]:
+    """Add analysis results for a run"""
     db_results = []
     for r in results:
-        ar = AnalysisResultDB(
-            id=str(uuid4()),
-            run_id=run_id,
-            brand=r["brand"],
-            model_name=model_name,
-            total_mentions=r["total_mentions"],
-            recommendation_count=r["recommendation_count"],
-            first_mention_count=r["first_mention_count"],
-            avg_sentiment_score=r["avg_sentiment_score"],
-            share_of_voice=r["share_of_voice"],
-            persona_affinity=json.dumps(r["persona_affinity"]),
-        )
-        db.add(ar)
-        db_results.append(ar)
-    await db.commit()
-    return db_results
+        ar_data = {
+            "id": str(uuid4()),
+            "run_id": run_id,
+            "brand": r["brand"],
+            "model_name": model_name,
+            "total_mentions": r["total_mentions"],
+            "recommendation_count": r["recommendation_count"],
+            "first_mention_count": r["first_mention_count"],
+            "avg_sentiment_score": r["avg_sentiment_score"],
+            "share_of_voice": r["share_of_voice"],
+            "persona_affinity": json.dumps(r["persona_affinity"]),
+            "topic_scores": json.dumps(r.get("topic_scores")) if r.get("topic_scores") else None,
+        }
+        db_results.append(ar_data)
+
+    if db_results:
+        result = supabase.table("analysis_results").insert(db_results).execute()
+        return result.data
+    return []

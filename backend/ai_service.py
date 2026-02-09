@@ -1,5 +1,6 @@
 """Pluggable AI service abstraction for multi-model research queries."""
 
+import asyncio
 import os
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
@@ -15,7 +16,7 @@ class AIService(ABC):
     display_name: str   # e.g. "Claude", "ChatGPT"
 
     @abstractmethod
-    async def ask_question(self, question_text: str, persona_name: str, category: str) -> str:
+    async def ask_question(self, question_text: str, persona_name: str, category: str, language: str = "English") -> str:
         """Ask a research question and return the model's response."""
         ...
 
@@ -28,15 +29,17 @@ class ClaudeAIService(AIService):
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.model = "claude-sonnet-4-5-20250929"
 
-    async def ask_question(self, question_text: str, persona_name: str, category: str) -> str:
+    async def ask_question(self, question_text: str, persona_name: str, category: str, language: str = "English") -> str:
+        lang_instruction = f" Respond in {language}." if language != "English" else ""
         prompt = (
             f"A user is asking for advice about {category}.\n\n"
             f"Their question: {question_text}\n\n"
             f"Provide a helpful, natural response as if you're having a conversation. "
             f"If relevant, mention specific products, services, or brands that would be good fits. "
-            f"Be specific and give reasoning for your recommendations."
+            f"Be specific and give reasoning for your recommendations.{lang_instruction}"
         )
-        message = self.client.messages.create(
+        message = await asyncio.to_thread(
+            self.client.messages.create,
             model=self.model,
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
@@ -52,13 +55,14 @@ class OpenAIService(AIService):
         self.client = AsyncOpenAI(api_key=os.getenv("OPEN_AI_API_KEY"))
         self.model = "gpt-4o"
 
-    async def ask_question(self, question_text: str, persona_name: str, category: str) -> str:
+    async def ask_question(self, question_text: str, persona_name: str, category: str, language: str = "English") -> str:
+        lang_instruction = f" Respond in {language}." if language != "English" else ""
         prompt = (
             f"A user is asking for advice about {category}.\n\n"
             f"Their question: {question_text}\n\n"
             f"Provide a helpful, natural response as if you're having a conversation. "
             f"If relevant, mention specific products, services, or brands that would be good fits. "
-            f"Be specific and give reasoning for your recommendations."
+            f"Be specific and give reasoning for your recommendations.{lang_instruction}"
         )
         response = await self.client.chat.completions.create(
             model=self.model,
