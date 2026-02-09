@@ -1,0 +1,263 @@
+import anthropic
+import os
+from typing import List, Dict
+import json
+from models import Persona, PersonaArchetype, Question, AnalysisResult
+
+
+class ClaudeService:
+    def __init__(self):
+        self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self.model = "claude-sonnet-4-5-20250929"
+
+    def _extract_json(self, response_text: str) -> str:
+        """Extract JSON from Claude's response, handling markdown code blocks"""
+        response_text = response_text.strip()
+        if response_text.startswith('```'):
+            # Remove markdown code blocks
+            lines = response_text.split('\n')
+            response_text = '\n'.join(lines[1:-1]) if len(lines) > 2 else response_text
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+        return response_text
+
+    async def generate_personas(self, category: str, market_context: str, count: int = 5) -> List[Persona]:
+        """Generate diverse personas for the given category"""
+
+        prompt = f"""Generate {count} diverse consumer personas for the "{category}" category.
+
+Market Context: {market_context}
+
+For each persona, provide:
+1. A realistic name
+2. Archetype (choose from: innovator, pragmatist, conservative, budget_conscious, quality_seeker)
+3. A brief description (2-3 sentences)
+4. Age range
+5. Occupation
+6. Tech savviness (1-5 scale)
+7. Price sensitivity (1-5 scale)
+8. Brand loyalty (1-5 scale)
+9. 3-5 key priorities when choosing in this category
+
+Make the personas diverse in demographics, priorities, and decision-making styles.
+
+Return ONLY valid JSON in this exact format:
+{{
+  "personas": [
+    {{
+      "name": "string",
+      "archetype": "innovator|pragmatist|conservative|budget_conscious|quality_seeker",
+      "description": "string",
+      "age_range": "string",
+      "occupation": "string",
+      "tech_savviness": 1-5,
+      "price_sensitivity": 1-5,
+      "brand_loyalty": 1-5,
+      "key_priorities": ["string", "string", ...]
+    }}
+  ]
+}}"""
+
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = message.content[0].text
+        response_text = self._extract_json(response_text)
+        data = json.loads(response_text)
+
+        personas = []
+        for i, p in enumerate(data["personas"]):
+            personas.append(Persona(
+                id=f"persona_{i}",
+                name=p["name"],
+                archetype=PersonaArchetype(p["archetype"]),
+                description=p["description"],
+                age_range=p["age_range"],
+                occupation=p["occupation"],
+                tech_savviness=p["tech_savviness"],
+                price_sensitivity=p["price_sensitivity"],
+                brand_loyalty=p["brand_loyalty"],
+                key_priorities=p["key_priorities"]
+            ))
+
+        return personas
+
+    async def generate_questions(
+        self,
+        persona: Persona,
+        category: str,
+        market_context: str,
+        count: int = 5
+    ) -> List[Question]:
+        """Generate natural questions this persona would ask about the category.
+
+        IMPORTANT: Questions should NOT mention specific brands - we want to see
+        what the AI brings up organically.
+        """
+
+        prompt = f"""You are {persona.name}, a {persona.age_range} {persona.occupation}.
+
+Your profile:
+- Archetype: {persona.archetype.value}
+- Description: {persona.description}
+- Tech savviness: {persona.tech_savviness}/5
+- Price sensitivity: {persona.price_sensitivity}/5
+- Brand loyalty: {persona.brand_loyalty}/5
+- Key priorities: {', '.join(persona.key_priorities)}
+
+You're researching the "{category}" category. Context: {market_context}
+
+Generate {count} natural questions you would ask when researching this category.
+
+CRITICAL RULES:
+- DO NOT mention specific brand names in questions
+- Ask open-ended questions that would naturally elicit brand recommendations
+- Questions should reflect your priorities, concerns, and decision-making style
+- Vary the question types (comparison, recommendation, feature-based, experience-based)
+
+Examples of GOOD questions:
+- "What are the most reliable options for [category]?"
+- "I need something that's [priority], what should I look for?"
+- "What do professionals in [field] typically use?"
+
+Return ONLY valid JSON:
+{{
+  "questions": [
+    {{
+      "question_text": "string",
+      "context": "brief explanation of why this persona asks this"
+    }}
+  ]
+}}"""
+
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = message.content[0].text
+        response_text = self._extract_json(response_text)
+        data = json.loads(response_text)
+
+        questions = []
+        for i, q in enumerate(data["questions"]):
+            questions.append(Question(
+                id=f"{persona.id}_q_{i}",
+                persona_id=persona.id,
+                question_text=q["question_text"],
+                context=q.get("context")
+            ))
+
+        return questions
+
+    async def ask_question(self, question: Question, persona: Persona, category: str) -> str:
+        """Have Claude answer the persona's question as naturally as possible"""
+
+        prompt = f"""A user is asking for advice about {category}.
+
+Their question: {question.question_text}
+
+Provide a helpful, natural response as if you're having a conversation. If relevant, mention specific products, services, or brands that would be good fits. Be specific and give reasoning for your recommendations."""
+
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return message.content[0].text
+
+    async def analyze_responses(
+        self,
+        responses: List[Dict],  # {question, response, persona}
+        brands: List[str],
+        category: str
+    ) -> List[AnalysisResult]:
+        """Analyze all responses to extract brand mentions, sentiment, and rankings"""
+
+        # Prepare responses text
+        responses_text = ""
+        for i, r in enumerate(responses):
+            responses_text += f"\n--- Response {i+1} ---\n"
+            responses_text += f"Persona: {r['persona_name']} ({r['persona_id']})\n"
+            responses_text += f"Question: {r['question']}\n"
+            responses_text += f"Response: {r['response']}\n"
+
+        prompt = f"""Analyze these AI responses about "{category}" for brand perception research.
+
+Tracked brands: {', '.join(brands)}
+
+Responses to analyze:
+{responses_text}
+
+For EACH tracked brand, analyze:
+1. Total mentions across all responses
+2. How many times it was explicitly recommended
+3. How many times it was mentioned first in a response
+4. Sentiment (aggregate across mentions): score from -1.0 (very negative) to 1.0 (very positive)
+5. Affinity with each persona (0.0 to 1.0 based on how well it matched their priorities)
+
+Also note if any brands were NOT mentioned at all.
+
+Return ONLY valid JSON:
+{{
+  "results": [
+    {{
+      "brand": "string",
+      "total_mentions": number,
+      "recommendation_count": number,
+      "first_mention_count": number,
+      "avg_sentiment_score": -1.0 to 1.0,
+      "persona_affinity": {{
+        "persona_0": 0.0-1.0,
+        "persona_1": 0.0-1.0,
+        ...
+      }}
+    }}
+  ],
+  "category_insights": "2-3 sentences about emergent patterns",
+  "methodology_notes": "any important caveats or observations"
+}}"""
+
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = message.content[0].text
+        response_text = self._extract_json(response_text)
+        data = json.loads(response_text)
+
+        # Calculate share of voice
+        total_mentions = sum(r["total_mentions"] for r in data["results"])
+
+        results = []
+        for r in data["results"]:
+            share_of_voice = r["total_mentions"] / total_mentions if total_mentions > 0 else 0.0
+
+            results.append(AnalysisResult(
+                brand=r["brand"],
+                total_mentions=r["total_mentions"],
+                recommendation_count=r["recommendation_count"],
+                first_mention_count=r["first_mention_count"],
+                avg_sentiment_score=r["avg_sentiment_score"],
+                share_of_voice=share_of_voice,
+                persona_affinity=r["persona_affinity"]
+            ))
+
+        # Sort by a composite score (mentions + recommendations + sentiment)
+        results.sort(
+            key=lambda x: (
+                x.total_mentions * 2 +
+                x.recommendation_count * 3 +
+                x.first_mention_count * 2 +
+                (x.avg_sentiment_score + 1) * 5  # normalize to 0-10
+            ),
+            reverse=True
+        )
+
+        return results
