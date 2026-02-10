@@ -198,6 +198,65 @@ Provide a helpful, natural response as if you're having a conversation. If relev
 
         return message.content[0].text
 
+    def analyze_structured_responses(
+        self,
+        statistical_results: List[Dict],
+        brands: List[str],
+        research_areas: List[str] = None,
+        topic_scores: Dict[str, Dict[str, Dict]] = None,
+    ) -> List[AnalysisResult]:
+        """Convert statistical results to AnalysisResult format (deterministic, no AI call).
+
+        This is the new path for structured responses — metrics are already computed
+        by the statistics module, we just need to convert the format.
+
+        Args:
+            topic_scores: Pre-computed {brand: {area: {"score": float, "mentions": int}}}
+        """
+        results = []
+        for brand in brands:
+            stats = next((s for s in statistical_results if s["brand"] == brand), None)
+            if not stats:
+                results.append(AnalysisResult(
+                    brand=brand,
+                    total_mentions=0,
+                    recommendation_count=0,
+                    first_mention_count=0,
+                    avg_sentiment_score=0.0,
+                    share_of_voice=0.0,
+                    persona_affinity={},
+                    topic_scores=topic_scores.get(brand) if topic_scores else None,
+                ))
+                continue
+
+            # persona_affinity may be a JSON string from the DB
+            pa = stats.get("persona_affinity", {})
+            if isinstance(pa, str):
+                pa = json.loads(pa)
+
+            results.append(AnalysisResult(
+                brand=brand,
+                total_mentions=stats.get("total_mentions", 0),
+                recommendation_count=stats.get("recommendation_count", 0),
+                first_mention_count=stats.get("first_mention_count", 0),
+                avg_sentiment_score=stats.get("avg_sentiment_score", 0.0),
+                share_of_voice=stats.get("share_of_voice", 0.0),
+                persona_affinity=pa,
+                topic_scores=topic_scores.get(brand) if topic_scores else None,
+            ))
+
+        # Sort by composite score
+        results.sort(
+            key=lambda x: (
+                x.total_mentions * 2 +
+                x.recommendation_count * 3 +
+                x.first_mention_count * 2 +
+                (x.avg_sentiment_score + 1) * 5
+            ),
+            reverse=True
+        )
+        return results
+
     async def analyze_responses(
         self,
         responses: List[Dict],  # {question, response, persona}
@@ -207,7 +266,11 @@ Provide a helpful, natural response as if you're having a conversation. If relev
         research_areas: List[str] = None,
         language: str = "English",
     ) -> List[AnalysisResult]:
-        """Analyze all responses to extract brand mentions, sentiment, and rankings"""
+        """Legacy analysis: send all responses to Claude for interpretation.
+
+        Used for old 'legacy_freetext' responses that don't have structured_data.
+        For new structured responses, use analyze_structured_responses() instead.
+        """
 
         # Prepare responses text
         responses_text = ""

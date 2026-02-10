@@ -90,8 +90,18 @@ export const getSession = async (sessionId: string): Promise<ResearchSession> =>
   return response.data;
 };
 
-export const updateSession = async (sessionId: string, setup: ResearchSetup): Promise<ResearchSession> => {
-  const response = await api.put(`/api/sessions/${sessionId}`, setup);
+export const updateSession = async (
+  sessionId: string,
+  setup: ResearchSetup,
+  resetResearch: boolean = false,
+): Promise<ResearchSession> => {
+  const url = `/api/sessions/${sessionId}${resetResearch ? '?reset_research=true' : ''}`;
+  const response = await api.put(url, setup);
+  return response.data;
+};
+
+export const deleteSessionRuns = async (sessionId: string): Promise<{ deleted: number; new_status: string }> => {
+  const response = await api.delete(`/api/sessions/${sessionId}/runs`);
   return response.data;
 };
 
@@ -174,6 +184,7 @@ export const listModels = async (): Promise<AIModel[]> => {
 export interface RunStartResult {
   run_id: string;
   total_questions: number;
+  iterations_per_question?: number;
   status: string;
   models?: string[];
 }
@@ -186,8 +197,14 @@ export interface RunProgress {
   error?: string;
 }
 
-export const startResearchRun = async (sessionId: string, models?: string[]): Promise<RunStartResult> => {
-  const response = await api.post(`/api/sessions/${sessionId}/runs`, models ? { models } : {});
+export interface RunConfig {
+  models?: string[];
+  iterations_per_question?: number;
+  temperature?: number;
+}
+
+export const startResearchRun = async (sessionId: string, config?: RunConfig): Promise<RunStartResult> => {
+  const response = await api.post(`/api/sessions/${sessionId}/runs`, config || {});
   return response.data;
 };
 
@@ -199,9 +216,9 @@ export const getRunProgress = async (sessionId: string, runId: string): Promise<
 export const runResearch = async (
   sessionId: string,
   onProgress?: (current: number, total: number) => void,
-  models?: string[],
+  config?: RunConfig,
 ): Promise<ResearchSession> => {
-  const { run_id, total_questions } = await startResearchRun(sessionId, models);
+  const { run_id, total_questions } = await startResearchRun(sessionId, config);
   onProgress?.(0, total_questions);
 
   // Poll until done
@@ -237,9 +254,84 @@ export const analyzeSession = async (sessionId: string): Promise<ResearchSession
   return response.data;
 };
 
+// ---- Contextual Relevance ----
+
+export interface ContextualRelevance {
+  brands: string[];
+  by_persona: Record<string, Record<string, number>>;
+  by_research_area: Record<string, Record<string, number>>;
+  personas: string[];
+  research_areas: string[];
+}
+
+export const getContextualRelevance = async (sessionId: string, runId: string): Promise<ContextualRelevance> => {
+  const response = await api.get(`/api/sessions/${sessionId}/runs/${runId}/contextual_relevance`);
+  return response.data;
+};
+
+// ---- Change Detection ----
+
+export interface MetricChange {
+  metric: string;
+  label: string;
+  value_a: number;
+  value_b: number;
+  delta_pp: number;
+  z_score: number;
+  p_value: number;
+  significant: boolean;
+  interpretation: 'noise' | 'notable' | 'major';
+}
+
+export interface BrandChange {
+  brand: string;
+  n_a: number;
+  n_b: number;
+  metrics: MetricChange[];
+  strength_a: number;
+  strength_b: number;
+  strength_delta: number;
+}
+
+export interface ChangeDetectionResult {
+  run_a: string;
+  run_b: string;
+  changes: BrandChange[];
+}
+
+export const getChangeDetection = async (
+  sessionId: string,
+  runA: string,
+  runB: string,
+): Promise<ChangeDetectionResult> => {
+  const response = await api.get(`/api/sessions/${sessionId}/change_detection`, {
+    params: { run_a: runA, run_b: runB },
+  });
+  return response.data;
+};
+
 // ---- Comparison ----
 
 export const compareRuns = async (sessionId: string): Promise<Record<string, any[]>> => {
   const response = await api.get(`/api/sessions/${sessionId}/compare`);
+  return response.data;
+};
+
+// ---- Sharing ----
+
+export const createShareLink = async (sessionId: string): Promise<{ share_token: string }> => {
+  const response = await api.post(`/api/sessions/${sessionId}/share`);
+  return response.data;
+};
+
+export const revokeShareLink = async (sessionId: string): Promise<void> => {
+  await api.delete(`/api/sessions/${sessionId}/share`);
+};
+
+export const getSharedSession = async (shareToken: string): Promise<ResearchSession> => {
+  // Use plain axios without JWT interceptor — this is a public endpoint
+  const response = await axios.get(`${API_BASE_URL}/api/shared/${shareToken}`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
   return response.data;
 };

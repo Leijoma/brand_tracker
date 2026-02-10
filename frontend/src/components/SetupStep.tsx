@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createSession, listSessions, getSession, deleteSession } from '@/lib/api';
+import { createSession, updateSession, listSessions, getSession, deleteSession } from '@/lib/api';
 import type { ResearchSession, ResearchSetup, SessionSummary } from '@/types';
-import { ArrowRight, Plus, X, History, Loader2, Tag, Globe, Trash2 } from 'lucide-react';
+import { ArrowRight, Plus, X, History, Loader2, Tag, Globe, Trash2, AlertTriangle } from 'lucide-react';
 
 interface SetupStepProps {
   onComplete: (session: ResearchSession) => void;
   onResume: (session: ResearchSession, step: 'personas' | 'questions' | 'research' | 'methodology' | 'dashboard') => void;
+  editSession?: ResearchSession | null;
+  onEditComplete?: (session: ResearchSession) => void;
 }
 
-export default function SetupStep({ onComplete, onResume }: SetupStepProps) {
+export default function SetupStep({ onComplete, onResume, editSession, onEditComplete }: SetupStepProps) {
   const [category, setCategory] = useState('');
   const [brandInput, setBrandInput] = useState('');
   const [brands, setBrands] = useState<string[]>([]);
@@ -28,9 +30,29 @@ export default function SetupStep({ onComplete, onResume }: SetupStepProps) {
   const [loadingSession, setLoadingSession] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  const isEditing = !!editSession;
+  const hasRuns = isEditing && editSession.runs.length > 0;
+
+  // Pre-populate form when editing
   useEffect(() => {
-    loadSessions();
-  }, []);
+    if (editSession) {
+      setCategory(editSession.setup.category);
+      setBrands(editSession.setup.brands);
+      setMarketContext(editSession.setup.market_context);
+      setQuestionsPerPersona(editSession.setup.questions_per_persona);
+      setResearchAreas(editSession.setup.research_areas || []);
+      setPrimaryBrand(editSession.setup.primary_brand || '');
+      setLanguage(editSession.setup.language || 'English');
+    }
+  }, [editSession]);
+
+  useEffect(() => {
+    if (!isEditing) {
+      loadSessions();
+    } else {
+      setLoadingSessions(false);
+    }
+  }, [isEditing]);
 
   const loadSessions = async () => {
     try {
@@ -115,6 +137,16 @@ export default function SetupStep({ onComplete, onResume }: SetupStepProps) {
       return;
     }
 
+    // Confirm destructive edit
+    if (hasRuns) {
+      const runCount = editSession!.runs.length;
+      const confirmed = window.confirm(
+        `This will delete ${runCount} research run(s) and all associated responses and analysis. ` +
+        `You will need to re-run the research.\n\nContinue?`
+      );
+      if (!confirmed) return;
+    }
+
     setLoading(true);
 
     try {
@@ -128,10 +160,15 @@ export default function SetupStep({ onComplete, onResume }: SetupStepProps) {
         language,
       };
 
-      const session = await createSession(setup);
-      onComplete(session);
+      if (isEditing) {
+        const updated = await updateSession(editSession!.id, setup, hasRuns);
+        onEditComplete?.(updated);
+      } else {
+        const session = await createSession(setup);
+        onComplete(session);
+      }
     } catch (err: any) {
-      const errorMessage = err?.response?.data?.detail || err?.message || 'Failed to create session. Please try again.';
+      const errorMessage = err?.response?.data?.detail || err?.message || 'Failed to save session. Please try again.';
       setError(`Error: ${errorMessage}`);
       console.error('Full error:', err);
     } finally {
@@ -141,8 +178,8 @@ export default function SetupStep({ onComplete, onResume }: SetupStepProps) {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Previous Sessions */}
-      {previousSessions.length > 0 && (
+      {/* Previous Sessions — hidden when editing */}
+      {!isEditing && previousSessions.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-8 py-5 border-b border-slate-200">
             <div className="flex items-center gap-2">
@@ -200,22 +237,42 @@ export default function SetupStep({ onComplete, onResume }: SetupStepProps) {
         </div>
       )}
 
-      {loadingSessions && previousSessions.length === 0 && (
+      {!isEditing && loadingSessions && previousSessions.length === 0 && (
         <div className="text-center py-4">
           <Loader2 className="w-5 h-5 text-slate-400 animate-spin inline-block" />
         </div>
       )}
 
-      {/* New Session Form */}
+      {/* Session Form */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 px-8 py-6 border-b border-slate-200">
+        <div className={`px-8 py-6 border-b border-slate-200 ${
+          isEditing
+            ? 'bg-gradient-to-r from-amber-50 to-orange-50'
+            : 'bg-gradient-to-r from-blue-50 to-purple-50'
+        }`}>
           <h2 className="text-2xl font-bold text-slate-900">
-            {previousSessions.length > 0 ? 'New Research Session' : 'Setup Research'}
+            {isEditing ? 'Edit Research Setup' : previousSessions.length > 0 ? 'New Research Session' : 'Setup Research'}
           </h2>
           <p className="text-slate-600 mt-1">
-            Define your category, competitors, and research parameters
+            {isEditing
+              ? 'Modify your category, brands, and research parameters'
+              : 'Define your category, competitors, and research parameters'}
           </p>
         </div>
+
+        {/* Warning banner for sessions with runs */}
+        {hasRuns && (
+          <div className="mx-8 mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">This session has existing research data</p>
+              <p className="text-sm text-amber-700 mt-1">
+                Saving changes will delete {editSession!.runs.length} research run(s) and all associated responses and analysis.
+                You will need to re-run the research after editing.
+              </p>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           {/* Category */}
@@ -436,9 +493,15 @@ export default function SetupStep({ onComplete, onResume }: SetupStepProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className={`w-full px-6 py-3 text-white rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+              isEditing
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+                : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700'
+            }`}
           >
-            {loading ? 'Creating Session...' : 'Start Research'}
+            {loading
+              ? (isEditing ? 'Saving Changes...' : 'Creating Session...')
+              : (isEditing ? 'Save Changes' : 'Start Research')}
             <ArrowRight className="w-5 h-5" />
           </button>
         </form>

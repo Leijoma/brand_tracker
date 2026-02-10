@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, BookOpen, AlertTriangle, BarChart3, Users, MessageSquare, Brain } from 'lucide-react';
+import { ArrowRight, BookOpen, AlertTriangle, BarChart3, Users, MessageSquare, Brain, TrendingUp, Shield } from 'lucide-react';
 
 interface MethodologyStepProps {
   onNext: () => void;
@@ -26,15 +26,20 @@ export default function MethodologyStep({ onNext }: MethodologyStepProps) {
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-3">
               <Brain className="w-5 h-5 text-indigo-600 flex-shrink-0" />
-              <h3 className="text-lg font-bold text-slate-900 m-0">Method</h3>
+              <h3 className="text-lg font-bold text-slate-900 m-0">What We Measure</h3>
             </div>
             <p className="text-slate-700">
-              BrandTracker measures <strong>AI-perceived brand positioning</strong> by
-              simulating consumer queries against large language models (LLMs). The method
-              is based on the fact that AI models have been trained on vast amounts of text
-              from the internet, including reviews, forums, news articles, and product
-              comparisons. Their responses therefore reflect an aggregated view of how
-              brands are perceived in digital sources.
+              BrandTracker measures <strong>how AI models represent and recommend brands</strong> when
+              responding to consumer-like queries. This matters because LLM-powered search
+              (ChatGPT, Perplexity, Google AI Overview) is becoming a significant channel
+              where purchasing decisions are influenced. The model&apos;s brand representation
+              is not just a proxy for reality &mdash; it <em>is</em> part of reality for
+              AI-mediated discovery.
+            </p>
+            <p className="text-slate-700">
+              Think of BrandTracker as a <strong>seismograph, not a thermometer</strong>.
+              It detects direction, relative position, change, and momentum &mdash; exactly
+              the inputs marketing strategy is built on.
             </p>
           </section>
 
@@ -46,30 +51,64 @@ export default function MethodologyStep({ onNext }: MethodologyStepProps) {
             <p className="text-slate-700">
               AI-generated personas represent different consumer segments with varying
               priorities, price sensitivity, and technical proficiency. By asking questions
-              from different perspectives, we can identify which brands resonate with
-              specific target audiences. The persona distribution is based on established
-              archetypes: innovators, pragmatists, conservatives, budget-conscious, and
-              quality seekers.
+              from different perspectives, we identify which brands resonate with
+              specific audiences. Breadth of personas matters more than depth &mdash;
+              diverse segments reveal the full picture of brand positioning.
             </p>
           </section>
 
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-3">
               <MessageSquare className="w-5 h-5 text-indigo-600 flex-shrink-0" />
-              <h3 className="text-lg font-bold text-slate-900 m-0">Question Design</h3>
+              <h3 className="text-lg font-bold text-slate-900 m-0">Question Design &amp; Structured Responses</h3>
             </div>
             <p className="text-slate-700">
-              Questions are designed to <strong>not mention specific brands</strong>.
-              Instead, we ask for recommendations, comparisons, and advice within the
-              category. This reveals which brands the AI spontaneously mentions and
-              recommends, reflecting their organic &quot;top-of-mind&quot; position.
-              The majority of questions directly ask for concrete brand and
-              model/product suggestions.
+              Questions are designed to <strong>not mention specific brands</strong>,
+              revealing which brands the AI spontaneously recommends. Three question
+              types are used:
             </p>
+            <ul className="text-slate-700 space-y-1">
+              <li><strong>Recall</strong> &mdash; open-ended recommendations (unaided brand salience)</li>
+              <li><strong>Preference</strong> &mdash; ranking a known set of brands (aided comparison)</li>
+              <li><strong>Forced Choice</strong> &mdash; selecting exactly one brand (discrete choice)</li>
+            </ul>
             <p className="text-slate-700">
-              When research areas have been selected (e.g., quality, safety, price),
-              questions are distributed so that each area is covered by at least 1-2
-              questions, enabling a structured comparison per dimension.
+              All responses use a <strong>structured JSON format</strong> with explicit brand names,
+              ranks, and sentiment categories. This eliminates interpretation ambiguity &mdash;
+              metrics are computed deterministically from structured fields, not from free-text parsing.
+            </p>
+          </section>
+
+          <section className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+              <h3 className="text-lg font-bold text-slate-900 m-0">Statistical Rigor</h3>
+            </div>
+            <p className="text-slate-700">
+              A single AI response is like asking one person on the street. To get reliable data,
+              each question is asked <strong>multiple times</strong> (iterations). At temperature &gt; 0,
+              the model&apos;s output is stochastic &mdash; this variance is the signal, not noise.
+            </p>
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 my-4">
+              <p className="text-indigo-900 text-sm m-0 font-medium">Sample Size Guidelines</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+                {[
+                  { n: '5-10', label: 'Directional', color: 'text-amber-700' },
+                  { n: '20-30', label: 'Standard', color: 'text-blue-700' },
+                  { n: '50', label: 'Strong', color: 'text-green-700' },
+                  { n: '80+', label: 'Publication', color: 'text-indigo-700' },
+                ].map(({ n, label, color }) => (
+                  <div key={n} className="text-center">
+                    <div className={`text-lg font-bold ${color}`}>{n}</div>
+                    <div className="text-xs text-slate-500">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="text-slate-700">
+              Confidence intervals use the <strong>Wilson score method</strong> for proportions
+              (mention rate, top-3 rate) and z-based intervals for means (average rank, sentiment).
+              All intervals are at the 95% confidence level.
             </p>
           </section>
 
@@ -80,80 +119,86 @@ export default function MethodologyStep({ onNext }: MethodologyStepProps) {
             </div>
             <ul className="text-slate-700 space-y-2">
               <li>
-                <strong>Mentions</strong> &mdash; Total number of times a brand is
-                mentioned across all responses. Measures visibility and &quot;share of mind&quot;.
+                <strong>Mention Rate</strong> &mdash; How often a brand appears across iterations (0&ndash;100%).
+                The core visibility metric.
               </li>
               <li>
-                <strong>Recommendations</strong> &mdash; Number of times the AI explicitly
-                recommends the brand. A stronger signal than a mention.
+                <strong>Top-3 Rate</strong> &mdash; How often the brand is ranked in the top 3.
+                Measures consideration set inclusion.
               </li>
               <li>
-                <strong>First Mention</strong> &mdash; Number of times the brand is
-                mentioned first in a response. Indicates &quot;top-of-mind&quot; position.
+                <strong>First Mention Rate</strong> &mdash; How often the brand is the #1 recommendation.
+                Indicates &quot;top-of-mind&quot; position.
               </li>
               <li>
-                <strong>Sentiment</strong> &mdash; Aggregated tone of mentions, from
-                -1.0 (very negative) to +1.0 (very positive).
+                <strong>Average Rank</strong> &mdash; Mean position when the brand is mentioned (lower = better).
+                Conditional on being mentioned.
               </li>
               <li>
-                <strong>Share of Voice</strong> &mdash; The brand&apos;s share of all
-                mentions. The higher, the more the brand dominates the AI&apos;s responses.
+                <strong>Sentiment</strong> &mdash; Aggregated tone from &minus;1.0 (negative) to +1.0 (positive),
+                based on categorical labels per response.
               </li>
               <li>
-                <strong>Persona Affinity</strong> &mdash; How well the brand matches each
-                persona&apos;s priorities (0.0-1.0). Shows which segments the brand appeals to.
+                <strong>Share of Voice</strong> &mdash; The brand&apos;s share of all mentions across
+                the run. Shows competitive dominance.
               </li>
               <li>
-                <strong>Topic Scores</strong> &mdash; Per-area ranking showing how the
-                brand performs within specific research areas.
+                <strong>Persona Affinity</strong> &mdash; Mention rate per persona segment.
+                Reveals which audiences the brand resonates with.
+              </li>
+              <li>
+                <strong>Topic Scores</strong> &mdash; Per-research-area mention rate showing how the
+                brand performs on specific dimensions (quality, price, etc.).
               </li>
             </ul>
           </section>
 
           <section className="mb-8">
             <div className="flex items-center gap-2 mb-3">
-              <Brain className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+              <Shield className="w-5 h-5 text-indigo-600 flex-shrink-0" />
               <h3 className="text-lg font-bold text-slate-900 m-0">Multi-Model Validation</h3>
             </div>
             <p className="text-slate-700">
-              By running the same questions against multiple AI models (e.g., Claude and
-              ChatGPT), we can cross-validate the results. The models have been trained on
-              partially different data and with different methods, reducing the risk of
-              systematic bias from any single model. When viewing &quot;All Models&quot;,
-              results are merged by calculating averages per brand.
+              Running the same questions against multiple AI models (Claude, ChatGPT)
+              provides cross-validation. Models trained on different data with different
+              methods reduce the risk of systematic bias. Findings that replicate across
+              independently trained models are more credible than single-model findings.
             </p>
           </section>
 
           <section className="bg-amber-50 border border-amber-200 rounded-xl p-6">
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
-              <h3 className="text-lg font-bold text-amber-900 m-0">Limitations</h3>
+              <h3 className="text-lg font-bold text-amber-900 m-0">Limitations &amp; Context</h3>
             </div>
             <ul className="text-amber-900 space-y-2 mb-0">
               <li>
-                <strong>AI is not real consumers.</strong> Results show how AI models
-                perceive brands, not how real people do. However, there is correlation
-                with real perception, since the models were trained on consumer-generated
-                content.
+                <strong>Model perception, not consumer opinion.</strong> Results show how AI
+                represents brands, not how consumers think. However, the AI&apos;s brand
+                representation <em>is</em> what consumers encounter in AI-powered search.
               </li>
               <li>
-                <strong>Training data bias.</strong> LLMs have knowledge cutoffs and may
-                over-weight information that is more common in training data. Brands with
-                a large online presence may be overrepresented.
+                <strong>Training data bias.</strong> LLMs overrepresent brands common in
+                their training data. English corpora overrepresent American brands. Knowledge
+                cutoffs mean very recent changes may not be reflected.
               </li>
               <li>
-                <strong>Small &quot;sample size&quot;.</strong> With a limited number of
-                personas and questions, this is a qualitative rather than quantitative
-                study. Results provide indications, not statistically significant conclusions.
+                <strong>Prompt sensitivity.</strong> Results depend on exact question wording.
+                Repeated iterations partially smooth per-response noise but cannot correct
+                systematic prompt bias. Consistent methodology across runs enables valid
+                trend comparison.
               </li>
               <li>
-                <strong>No temporal or geographic specificity.</strong> AI models&apos;
-                knowledge is not anchored to a specific time or market. Results may
-                mix global and local perspectives.
+                <strong>Conditional independence.</strong> Responses from the same model are
+                conditionally independent (same weights, same biases). Confidence intervals
+                characterize the model&apos;s output distribution, not uncertainty about
+                which model to use.
               </li>
               <li>
-                <strong>Deterministic variation.</strong> At low temperature, the same
-                prompt yields similar responses, which limits the spread of results.
+                <strong>Every method has bias.</strong> Surveys, focus groups, NPS, and
+                social listening all have known biases. BrandTracker&apos;s approach is not
+                more &quot;wrong&quot; &mdash; it is new. The statistical methods bring the
+                same rigor that makes traditional methods credible.
               </li>
             </ul>
           </section>

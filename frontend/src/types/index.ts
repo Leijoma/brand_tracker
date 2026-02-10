@@ -53,6 +53,14 @@ export interface QueryResponse {
   response_text: string;
   model_name: string;
   timestamp: string;
+  structured_data?: {
+    recommendations?: Array<{ brand: string; rank: number; sentiment?: string }>;
+    rankings?: Array<{ brand: string; rank: number; score?: number; sentiment?: string }>;
+    chosen_brand?: string;
+    confidence?: number;
+  };
+  response_type?: 'recall' | 'preference' | 'forced_choice' | 'legacy_freetext';
+  iteration?: number;
 }
 
 export interface AnalysisResult {
@@ -67,6 +75,29 @@ export interface AnalysisResult {
   topic_scores?: { [area: string]: { score: number; mentions: number } };
 }
 
+export interface StatisticalResult {
+  brand: string;
+  model_name: string;
+  mention_frequency: number;
+  avg_rank: number;
+  top3_rate: number;
+  first_mention_rate: number;
+  recommendation_rate: number;
+  mention_frequency_ci: [number, number];
+  avg_rank_ci: [number, number];
+  top3_rate_ci: [number, number];
+  avg_sentiment_score: number;
+  sentiment_ci: [number, number];
+  recommendation_strength: number;
+  recommendation_strength_ci: [number, number];
+  total_iterations: number;
+  total_mentions: number;
+  share_of_voice: number;
+  recommendation_count: number;
+  first_mention_count: number;
+  persona_affinity: { [key: string]: number };
+}
+
 export interface ResearchRun {
   id: string;
   session_id: string;
@@ -74,8 +105,11 @@ export interface ResearchRun {
   completed_at?: string;
   status: 'running' | 'completed' | 'error';
   models_used: string[];
+  iterations_per_question: number;
+  temperature: number;
   responses: QueryResponse[];
   analysis?: AnalysisResult[];
+  statistical_results?: StatisticalResult[];
 }
 
 export interface AIModel {
@@ -94,6 +128,7 @@ export interface ResearchSession {
   analysis?: AnalysisResult[];
   created_at: string;
   status: string;
+  share_token?: string;
 }
 
 export interface SessionSummary {

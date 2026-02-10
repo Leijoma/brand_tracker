@@ -182,6 +182,71 @@ def delete_session(supabase: Client, session_id: str, user_id: str = None) -> bo
     return len(result.data) > 0
 
 
+def delete_session_runs(supabase: Client, session_id: str) -> int:
+    """Delete all research runs for a session. DB CASCADE handles responses, analysis, stats."""
+    result = supabase.table("research_runs").delete().eq("session_id", session_id).execute()
+    return len(result.data)
+
+
+def create_share_token(supabase: Client, session_id: str, user_id: str = None) -> Optional[str]:
+    """Generate and store a share token for a session. Returns the token."""
+    session = get_session(supabase, session_id, user_id=user_id)
+    if not session:
+        return None
+    token = str(uuid4())
+    supabase.table("sessions").update({
+        "share_token": token,
+        "updated_at": datetime.utcnow().isoformat(),
+    }).eq("id", session_id).execute()
+    return token
+
+
+def revoke_share_token(supabase: Client, session_id: str, user_id: str = None) -> bool:
+    """Revoke (null out) the share token for a session."""
+    session = get_session(supabase, session_id, user_id=user_id)
+    if not session:
+        return False
+    supabase.table("sessions").update({
+        "share_token": None,
+        "updated_at": datetime.utcnow().isoformat(),
+    }).eq("id", session_id).execute()
+    return True
+
+
+def get_session_by_share_token(supabase: Client, share_token: str) -> Optional[Dict[str, Any]]:
+    """Get a session by its share token, with all related data (public, no user check)."""
+    result = supabase.table("sessions").select("*").eq("share_token", share_token).execute()
+    if not result.data:
+        return None
+
+    session = result.data[0]
+    session_id = session["id"]
+
+    # Fetch related personas
+    personas_result = supabase.table("session_personas").select("persona_id").eq("session_id", session_id).execute()
+    if personas_result.data:
+        persona_ids = [p["persona_id"] for p in personas_result.data]
+        personas = supabase.table("personas").select("*").in_("id", persona_ids).execute()
+        session["personas"] = personas.data
+    else:
+        session["personas"] = []
+
+    # Fetch related questions
+    questions_result = supabase.table("session_questions").select("question_id").eq("session_id", session_id).execute()
+    if questions_result.data:
+        question_ids = [q["question_id"] for q in questions_result.data]
+        questions = supabase.table("questions").select("*").in_("id", question_ids).execute()
+        session["questions"] = questions.data
+    else:
+        session["questions"] = []
+
+    # Fetch research runs
+    runs = list_runs(supabase, session_id)
+    session["runs"] = runs
+
+    return session
+
+
 def update_session_status(supabase: Client, session_id: str, status: str) -> None:
     """Update session status"""
     supabase.table("sessions").update({
@@ -252,13 +317,16 @@ def set_session_questions(supabase: Client, session_id: str, question_ids: List[
 
 # ---- Research Runs ----
 
-def create_run(supabase: Client, session_id: str, models_used: List[str] = None) -> Dict[str, Any]:
+def create_run(supabase: Client, session_id: str, models_used: List[str] = None,
+              iterations_per_question: int = 1, temperature: float = 0.7) -> Dict[str, Any]:
     """Create a new research run"""
     run_data = {
         "id": str(uuid4()),
         "session_id": session_id,
         "status": "running",
         "models_used": json.dumps(models_used or ["claude"]),
+        "iterations_per_question": iterations_per_question,
+        "temperature": temperature,
         "started_at": datetime.utcnow().isoformat(),
     }
     result = supabase.table("research_runs").insert(run_data).execute()
@@ -298,6 +366,10 @@ def get_run(supabase: Client, run_id: str) -> Optional[Dict[str, Any]]:
     analysis = supabase.table("analysis_results").select("*").eq("run_id", run_id).execute()
     run["analysis_results"] = analysis.data
 
+    # Fetch statistical results
+    stats = supabase.table("statistical_results").select("*").eq("run_id", run_id).execute()
+    run["statistical_results"] = stats.data
+
     return run
 
 
@@ -313,13 +385,18 @@ def list_runs(supabase: Client, session_id: str) -> List[Dict[str, Any]]:
         analysis = supabase.table("analysis_results").select("*").eq("run_id", run["id"]).execute()
         run["analysis_results"] = analysis.data
 
+        stats = supabase.table("statistical_results").select("*").eq("run_id", run["id"]).execute()
+        run["statistical_results"] = stats.data
+
     return result.data
 
 
 # ---- Responses ----
 
 def add_response(supabase: Client, run_id: str, question_id: str, persona_id: str,
-                response_text: str, model_name: str = "claude") -> Dict[str, Any]:
+                response_text: str, model_name: str = "claude",
+                structured_data: Dict = None, response_type: str = "recall",
+                iteration: int = 1, prompt_variation: str = None) -> Dict[str, Any]:
     """Add a response to a run"""
     response_data = {
         "id": str(uuid4()),
@@ -329,6 +406,10 @@ def add_response(supabase: Client, run_id: str, question_id: str, persona_id: st
         "response_text": response_text,
         "model_name": model_name,
         "timestamp": datetime.utcnow().isoformat(),
+        "structured_data": json.dumps(structured_data) if structured_data else None,
+        "response_type": response_type,
+        "iteration": iteration,
+        "prompt_variation": prompt_variation,
     }
     result = supabase.table("responses").insert(response_data).execute()
     return result.data[0] if result.data else None
@@ -359,3 +440,51 @@ def add_analysis_results(supabase: Client, run_id: str, results: list, model_nam
         result = supabase.table("analysis_results").insert(db_results).execute()
         return result.data
     return []
+
+
+# ---- Statistical Results ----
+
+def add_statistical_results(supabase: Client, run_id: str, results: Dict[str, Dict],
+                           model_name: str = "claude") -> List[Dict[str, Any]]:
+    """Add statistical results for a run"""
+    db_results = []
+    for brand, stats in results.items():
+        sr_data = {
+            "id": str(uuid4()),
+            "run_id": run_id,
+            "brand": brand,
+            "model_name": model_name,
+            "mention_frequency": stats["mention_frequency"],
+            "avg_rank": stats["avg_rank"],
+            "top3_rate": stats["top3_rate"],
+            "first_mention_rate": stats["first_mention_rate"],
+            "recommendation_rate": stats["recommendation_rate"],
+            "mention_frequency_ci_low": stats["mention_frequency_ci_low"],
+            "mention_frequency_ci_high": stats["mention_frequency_ci_high"],
+            "avg_rank_ci_low": stats["avg_rank_ci_low"],
+            "avg_rank_ci_high": stats["avg_rank_ci_high"],
+            "top3_rate_ci_low": stats["top3_rate_ci_low"],
+            "top3_rate_ci_high": stats["top3_rate_ci_high"],
+            "avg_sentiment_score": stats["avg_sentiment_score"],
+            "sentiment_ci_low": stats["sentiment_ci_low"],
+            "sentiment_ci_high": stats["sentiment_ci_high"],
+            "recommendation_strength": stats.get("recommendation_strength", 0.0),
+            "recommendation_strength_ci_low": stats.get("recommendation_strength_ci_low", 0.0),
+            "recommendation_strength_ci_high": stats.get("recommendation_strength_ci_high", 0.0),
+            "total_iterations": stats["total_iterations"],
+            "total_mentions": stats["total_mentions"],
+            "share_of_voice": stats["share_of_voice"],
+            "persona_affinity": json.dumps(stats.get("persona_affinity", {})),
+        }
+        db_results.append(sr_data)
+
+    if db_results:
+        result = supabase.table("statistical_results").insert(db_results).execute()
+        return result.data
+    return []
+
+
+def get_statistical_results(supabase: Client, run_id: str) -> List[Dict[str, Any]]:
+    """Get statistical results for a run"""
+    result = supabase.table("statistical_results").select("*").eq("run_id", run_id).execute()
+    return result.data

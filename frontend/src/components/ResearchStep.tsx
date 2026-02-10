@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { runResearch, analyzeRun, analyzeSession, listModels } from '@/lib/api';
 import type { ResearchSession, AIModel } from '@/types';
-import { Play, BarChart3, MessageSquare, CheckCircle2, Clock, RefreshCw, Cpu } from 'lucide-react';
+import { Play, BarChart3, MessageSquare, CheckCircle2, Clock, RefreshCw, Cpu, Repeat, Thermometer } from 'lucide-react';
 
 interface ResearchStepProps {
   session: ResearchSession;
@@ -19,19 +19,22 @@ export default function ResearchStep({ session, onUpdate, onNext }: ResearchStep
   const [error, setError] = useState('');
   const [models, setModels] = useState<AIModel[]>([]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [iterations, setIterations] = useState(1);
+  const [temperature, setTemperature] = useState(0.7);
 
   const totalQuestions = session.questions.length;
   const hasResponses = session.responses.length > 0 || session.runs.some(r => r.responses.length > 0);
   const hasRuns = session.runs.length > 0;
   const latestRun = hasRuns ? session.runs[session.runs.length - 1] : null;
 
+  const totalApiCalls = totalQuestions * selectedModels.length * iterations;
+  const estimatedCost = totalApiCalls * 0.003; // rough estimate
+
   useEffect(() => {
     listModels().then((m) => {
       setModels(m);
-      // Select all available models by default
       setSelectedModels(m.filter(x => x.available).map(x => x.name));
     }).catch(() => {
-      // Fallback: just Claude
       setSelectedModels(['claude']);
     });
   }, []);
@@ -55,10 +58,18 @@ export default function ResearchStep({ session, onUpdate, onNext }: ResearchStep
     setProgressTotal(0);
 
     try {
-      const updatedSession = await runResearch(session.id, (current, total) => {
-        setProgressCurrent(current);
-        setProgressTotal(total);
-      }, selectedModels);
+      const updatedSession = await runResearch(
+        session.id,
+        (current, total) => {
+          setProgressCurrent(current);
+          setProgressTotal(total);
+        },
+        {
+          models: selectedModels,
+          iterations_per_question: iterations,
+          temperature,
+        },
+      );
       onUpdate(updatedSession);
     } catch (err: any) {
       const errorMessage = err?.response?.data?.detail || err?.message || 'Failed to run research.';
@@ -150,7 +161,7 @@ export default function ResearchStep({ session, onUpdate, onNext }: ResearchStep
           </div>
 
           {/* Model Selection */}
-          <div className="mb-8">
+          <div className="mb-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
               <Cpu className="w-4 h-4" /> AI Models
             </h3>
@@ -178,11 +189,98 @@ export default function ResearchStep({ session, onUpdate, onNext }: ResearchStep
                 </label>
               ))}
             </div>
-            {selectedModels.length > 0 && (
+          </div>
+
+          {/* Statistical Rigor Settings */}
+          <div className="mb-8 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+              <Repeat className="w-4 h-4 text-indigo-600" /> Statistical Rigor
+            </h3>
+
+            {/* Iterations slider */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Iterations per question
+                </label>
+                <span className="text-sm font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded">
+                  {iterations}x
+                </span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={50}
+                value={iterations}
+                onChange={(e) => setIterations(Number(e.target.value))}
+                disabled={researching}
+                className="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              />
+              <div className="flex justify-between text-xs text-slate-500 mt-1">
+                <span>1 (quick)</span>
+                <span>10</span>
+                <span>20 (recommended)</span>
+                <span>50 (thorough)</span>
+              </div>
               <p className="text-xs text-slate-500 mt-2">
-                Total queries: {totalQuestions} questions x {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''} = {totalQuestions * selectedModels.length}
+                {iterations === 1
+                  ? 'Single pass — no statistical confidence intervals.'
+                  : iterations < 10
+                  ? 'Low sample size — confidence intervals will be wide.'
+                  : iterations < 20
+                  ? 'Moderate sample — reasonable confidence intervals.'
+                  : 'High sample — narrow confidence intervals, production-grade data.'}
               </p>
-            )}
+            </div>
+
+            {/* Temperature slider */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                  <Thermometer className="w-3 h-3" /> Temperature
+                </label>
+                <span className="text-sm font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded">
+                  {temperature.toFixed(1)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={15}
+                value={temperature * 10}
+                onChange={(e) => setTemperature(Number(e.target.value) / 10)}
+                disabled={researching}
+                className="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              />
+              <div className="flex justify-between text-xs text-slate-500 mt-1">
+                <span>0.0 (deterministic)</span>
+                <span>0.7 (default)</span>
+                <span>1.5 (creative)</span>
+              </div>
+            </div>
+
+            {/* Summary box */}
+            <div className="bg-white/60 rounded-lg p-3 border border-indigo-100">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <p className="text-lg font-bold text-indigo-700">{totalApiCalls}</p>
+                  <p className="text-xs text-slate-500">Total API Calls</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-indigo-700">~${estimatedCost.toFixed(2)}</p>
+                  <p className="text-xs text-slate-500">Est. Cost</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-indigo-700">
+                    {iterations >= 20 ? '95%' : iterations >= 10 ? '~90%' : iterations >= 5 ? '~80%' : 'N/A'}
+                  </p>
+                  <p className="text-xs text-slate-500">Confidence Level</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-400 text-center mt-2">
+                {totalQuestions} questions x {selectedModels.length} model{selectedModels.length > 1 ? 's' : ''} x {iterations} iteration{iterations > 1 ? 's' : ''}
+              </p>
+            </div>
           </div>
 
           {/* Previous Runs */}
@@ -206,6 +304,12 @@ export default function ResearchStep({ session, onUpdate, onNext }: ResearchStep
                       }`}>{m}</span>
                     ))}
                     <span className="text-slate-500">{run.responses.length} responses</span>
+                    {run.iterations_per_question > 1 && (
+                      <span className="text-indigo-600 text-xs font-medium">{run.iterations_per_question}x iter</span>
+                    )}
+                    {run.statistical_results && run.statistical_results.length > 0 && (
+                      <span className="text-indigo-500 text-xs">stats</span>
+                    )}
                     {run.analysis ? (
                       <span className="text-emerald-600 text-xs font-medium">analyzed</span>
                     ) : (

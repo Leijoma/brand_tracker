@@ -100,6 +100,9 @@ class QueryResponse(BaseModel):
     response_text: str
     model_name: str = "claude"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    structured_data: Optional[Dict] = None
+    response_type: str = "recall"
+    iteration: int = 1
 
 
 # ---- Analysis schemas ----
@@ -117,6 +120,34 @@ class AnalysisResult(BaseModel):
     topic_scores: Optional[Dict[str, Dict[str, float]]] = None
 
 
+class StatisticalResult(BaseModel):
+    """Statistical metrics with confidence intervals from repeated measurements."""
+    model_config = ConfigDict(protected_namespaces=())
+    brand: str
+    model_name: str = "claude"
+    mention_frequency: float = 0.0
+    avg_rank: float = 0.0
+    top3_rate: float = 0.0
+    first_mention_rate: float = 0.0
+    recommendation_rate: float = 0.0
+    # Confidence intervals
+    mention_frequency_ci: List[float] = [0.0, 0.0]  # [low, high]
+    avg_rank_ci: List[float] = [0.0, 0.0]
+    top3_rate_ci: List[float] = [0.0, 0.0]
+    avg_sentiment_score: float = 0.0
+    sentiment_ci: List[float] = [0.0, 0.0]
+    # Recommendation strength (position-based, 0-5 scale)
+    recommendation_strength: float = 0.0
+    recommendation_strength_ci: List[float] = [0.0, 0.0]
+    # Legacy compat
+    total_iterations: int = 1
+    total_mentions: int = 0
+    share_of_voice: float = 0.0
+    recommendation_count: int = 0
+    first_mention_count: int = 0
+    persona_affinity: Dict[str, float] = {}
+
+
 # ---- Research Run schemas ----
 
 class ResearchRun(BaseModel):
@@ -127,8 +158,11 @@ class ResearchRun(BaseModel):
     completed_at: Optional[datetime] = None
     status: str = "running"
     models_used: List[str] = ["claude"]
+    iterations_per_question: int = 1
+    temperature: float = 0.7
     responses: List[QueryResponse] = []
     analysis: Optional[List[AnalysisResult]] = None
+    statistical_results: Optional[List[StatisticalResult]] = None
 
 
 # ---- Session response schemas ----
@@ -152,3 +186,4 @@ class ResearchSession(BaseModel):
     analysis: Optional[List[AnalysisResult]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     status: str = "setup"
+    share_token: Optional[str] = None

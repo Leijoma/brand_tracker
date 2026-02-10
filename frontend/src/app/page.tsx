@@ -18,6 +18,7 @@ export default function Home() {
   const { user, loading: authLoading, signOut } = useAuth();
   const [currentStep, setCurrentStep] = useState<Step>('setup');
   const [session, setSession] = useState<ResearchSession | null>(null);
+  const [editMode, setEditMode] = useState(false);
 
   if (authLoading) {
     return (
@@ -91,6 +92,9 @@ export default function Home() {
                   <button
                     onClick={() => {
                       if (session && index <= currentStepIndex) {
+                        if (step.id === 'setup' && currentStepIndex > 0) {
+                          setEditMode(true);
+                        }
                         setCurrentStep(step.id);
                       }
                     }}
@@ -139,6 +143,12 @@ export default function Home() {
               setSession(resumedSession);
               setCurrentStep(step);
             }}
+            editSession={editMode ? session : null}
+            onEditComplete={(updatedSession) => {
+              setSession(updatedSession);
+              setEditMode(false);
+              setCurrentStep('personas');
+            }}
           />
         )}
         {currentStep === 'personas' && session && (
@@ -168,7 +178,14 @@ export default function Home() {
           />
         )}
         {currentStep === 'dashboard' && session && (
-          <DashboardStep session={session} onRerun={() => setCurrentStep('research')} />
+          <DashboardStep
+            session={session}
+            onRerun={() => setCurrentStep('research')}
+            onEditSetup={() => {
+              setEditMode(true);
+              setCurrentStep('setup');
+            }}
+          />
         )}
       </main>
     </div>
